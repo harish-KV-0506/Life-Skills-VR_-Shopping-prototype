@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Life Skills VR: Shopping</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+:root{--bg:#eef3f4;--card:#fff;--tx:#17262b;--mut:#51666d;--ac:#0e7c86;--ok:#1d8a55;--bd:#cfdadd;--bub:#e3eef0;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1a1d;--card:#16262b;--tx:#e6f0f2;--mut:#93a9b0;--ac:#4cc3cf;--ok:#52c58a;--bd:#2a3f46;--bub:#1f353b;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f1a1d;--card:#16262b;--tx:#e6f0f2;--mut:#93a9b0;--ac:#4cc3cf;--ok:#52c58a;--bd:#2a3f46;--bub:#1f353b;color-scheme:dark}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--tx);font:16px/1.5 "Atkinson Hyperlegible",system-ui,sans-serif}
+main{display:grid;grid-template-columns:1fr;grid-template-rows:42vh 1fr;height:100%}
+@media(min-width:860px){main{grid-template-columns:1fr 400px;grid-template-rows:1fr}}
+#stage{position:relative;min-height:240px}
+#c{width:100%;height:100%;display:block}
+#banner{position:absolute;left:12px;right:12px;bottom:12px;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:8px 12px;font-weight:700}
+aside{overflow:auto;padding:16px;border-left:1px solid var(--bd);background:var(--card)}
+h1{font-size:1.25rem;margin:0 0 4px}
+.mut{color:var(--mut);font-size:.9rem;margin:0 0 10px}
+ol{list-style:none;padding:0;margin:0 0 12px}
+li{padding:5px 0;color:var(--mut)}
+li.on{color:var(--tx);font-weight:700}
+li.done{color:var(--ok)}
+button{font:inherit;border:1px solid var(--ac);background:transparent;color:var(--ac);border-radius:8px;padding:6px 12px;cursor:pointer}
+button:hover,button.p{background:var(--ac);color:var(--bg)}
+button:focus-visible,input:focus-visible{outline:3px solid var(--ac);outline-offset:2px}
+.row{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+#chat{height:190px;overflow:auto;border:1px solid var(--bd);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:6px}
+.b{background:var(--bub);padding:6px 10px;border-radius:10px;max-width:88%}
+.b.me{align-self:flex-end;border:1px solid var(--ac)}
+.b small{display:block;color:var(--mut)}
+input{font:inherit;flex:1;min-width:0;padding:6px 10px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--tx)}
+#sum{border:2px solid var(--ok);border-radius:10px;padding:10px 12px;margin-top:12px}
+pre{white-space:pre-wrap;word-break:break-all;font-size:.75rem;max-height:120px;overflow:auto;background:var(--bg);padding:6px;border-radius:6px}
+</style></head><body>
+<main>
+<section id="stage"><canvas id="c"></canvas><div id="banner"></div></section>
+<aside>
+<h1>FreshMart: buy milk</h1>
+<p class="mut">Level <b id="lv">1</b>. Click objects in the shop. In a headset, use the controller trigger. No camera, microphone or face tracking is used, and nothing leaves this tab.</p>
+<ol id="steps"></ol>
+<div class="row"><button id="hint">Hint</button><button id="pay" class="p" hidden>Pay ₹30</button><button id="calm">Calm mode: off</button><button id="voice">Voice: off</button><button id="vr" hidden>Enter VR</button></div>
+<div id="chat" aria-live="polite"></div>
+<div class="row" id="chips"></div>
+<div class="row"><input id="msg" placeholder="Type to the cashier" aria-label="Message to the cashier"><button id="send">Send</button></div>
+<div id="sum" hidden></div>
+</aside></main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const STEPS=[
+{id:"basket",t:"Pick up a basket",h:["Look near the entrance.","The basket is the blue box on the floor.","Click the blue basket."]},
+{id:"milk",t:"Find the milk",h:["Milk is kept on the shelves on the right.","Look for a white carton with a blue top.","Click the white carton with the blue top."]},
+{id:"counter",t:"Go to the counter",h:["Where do people pay?","The counter is at the back, next to the cashier.","Click the brown counter."]},
+{id:"pay",t:"Pay for the milk",h:["Ask the cashier how much it is.","Say hello, then ask to pay.","Press the Pay button."]},
+{id:"receipt",t:"Collect your receipt",h:["Something printed is waiting for you.","The white paper on the counter is the receipt.","Click the white paper."]},
+{id:"exit",t:"Leave the shop",h:["You are finished here.","The exit is the green door.","Click the green door."]}];
+const ST={basket:[[0,0,4.5],[-1.5,.5,3]],milk:[[1.5,0,.5],[4,1.1,0]],counter:[[-1,0,-.5],[-3,1,-3]],exit:[[0,0,2],[0,1,5.4]]};
+ST.pay=ST.receipt=ST.counter;
+const renderer=new THREE.WebGLRenderer({canvas:$("#c"),antialias:true});renderer.xr.enabled=true;
+const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(65,1,.1,50),rig=new THREE.Group();
+rig.add(camera);scene.add(rig);camera.position.set(0,1.6,0);
+scene.add(new THREE.HemisphereLight(0xffffff,0x8899aa,.95));
+const dl=new THREE.DirectionalLight(0xffffff,.5);dl.position.set(3,6,4);scene.add(dl);
+let shop,pick=[],byId={},calm=false,voice=false,last="",goal=new THREE.Vector3(0,0,4.5),tg=new THREE.Vector3(-1.5,.5,3),look=new THREE.Vector3(0,1,0),S;
+scene.background=new THREE.Color(0xcfe3ec);
+function box(w,h,d,c,x,y,z,id){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshStandardMaterial({color:c,roughness:.8}));m.position.set(x,y,z);shop.add(m);if(id){m.userData.id=id;pick.push(m);(byId[id]=byId[id]||[]).push(m)}return m}
+function build(level){
+ if(shop)scene.remove(shop);shop=new THREE.Group();scene.add(shop);pick=[];byId={};
+ box(12,.1,12,0xd6d3c8,0,-.05,0);box(12,4,.2,0xe8eef2,0,2,-6);box(.2,4,12,0xe8eef2,-6,2,0);box(.2,4,12,0xe8eef2,6,2,0);box(12,4,.2,0xe8eef2,0,2,6);
+ box(1.4,2.2,.15,0x2e9e6a,0,1.1,5.85,"exit");
+ box(.5,.3,.4,0x2f6fe0,-1.5,.15,3,"basket");
+ box(2.6,1,1,0x8a6d4b,-3,.5,-3,"counter");
+ const cb=box(.5,.9,.3,0x4a5d73,-3,1.45,-4.1,"cashier"),hd=new THREE.Mesh(new THREE.SphereGeometry(.2,16,12),new THREE.MeshStandardMaterial({color:0xe0b48f}));
+ hd.position.set(-3,2.1,-4.1);hd.userData.id="cashier";shop.add(hd);pick.push(hd);(byId.cashier=byId.cashier||[]).push(hd);
+ box(.25,.02,.35,0xffffff,-2.4,1.02,-2.8,"receipt").visible=false;
+ box(.5,2.2,5.2,0x6b7385,4.95,1.1,0);
+ const pal=[0xe5573d,0xf2b134,0x58a55c,0x9b6ad8,0xd96ba0,0x4fb3c8],rows=[.25,.85,1.45];let k=0;
+ const like=level>1?[[1,1],[0,5],[2,3]]:[];
+ rows.forEach((y,r)=>{for(let i=0;i<7;i++){const z=-2.4+i*.8;
+  if(r==1&&i==3){box(.28,.4,.28,0xffffff,4.5,y+.2,z,"milk");box(.28,.1,.28,0x2f6fe0,4.5,y+.45,z,"milk");continue}
+  if(like.some(p=>p[0]==r&&p[1]==i)){box(.28,.4,.28,0xfff3d6,4.5,y+.2,z,"decoy");box(.28,.1,.28,0xd23b3b,4.5,y+.45,z,"decoy");continue}
+  box(.3,.4,.3,pal[k++%6],4.5,y+.2,z,"decoy")}});
+}
+const pc=document.createElement("canvas");pc.width=768;pc.height=320;const px=pc.getContext("2d"),ptex=new THREE.CanvasTexture(pc);
+const panel=new THREE.Mesh(new THREE.PlaneGeometry(1.8,.75),new THREE.MeshBasicMaterial({map:ptex}));panel.position.set(0,2.1,-1.8);panel.visible=false;rig.add(panel);
+function wrap(t,x,y,w,l){let ln="";for(const wd of t.split(" ")){const n=ln+wd+" ";if(px.measureText(n).width>w&&ln){px.fillText(ln,x,y);y+=l;ln=wd+" "}else ln=n}px.fillText(ln,x,y)}
+function drawPanel(){px.fillStyle="#16262b";px.fillRect(0,0,768,320);px.fillStyle="#4cc3cf";px.font="bold 34px sans-serif";px.fillText(S.done?"Well done!":"Goal: "+STEPS[S.step].t,24,56);px.fillStyle="#fff";px.font="30px sans-serif";wrap(last,24,112,720,40);ptex.needsUpdate=true}
+function log(e){S.log.push({sec:Math.round((performance.now()-S.t0)/1000),event:e})}
+function say(who,t){const d=document.createElement("div");d.className="b"+(who=="You"?" me":"");const s=document.createElement("small");s.textContent=who;d.append(s,t);$("#chat").append(d);$("#chat").scrollTop=1e9;
+ if(who!="You"){last=t;if(voice&&window.speechSynthesis&&who=="Cashier"){try{speechSynthesis.speak(new SpeechSynthesisUtterance(t))}catch(e){}}}
+ if(S&&!S.done)drawPanel();$("#banner").textContent=last||("Goal: "+STEPS[S.step].t)}
+function steps(){const o=$("#steps");o.innerHTML="";STEPS.forEach((s,i)=>{const l=document.createElement("li");l.textContent=(i<S.step?"✔ ":i==S.step&&!S.done?"➤ ":"○ ")+s.t;l.className=i<S.step?"done":i==S.step&&!S.done?"on":"";o.append(l)});
+ $("#pay").hidden=S.done||STEPS[S.step].id!="pay"}
+function go(){const c=STEPS[S.step].id,p=ST[c];if(!p)return;goal.set(...p[0]);tg.set(...p[1])}
+function glow(on){Object.values(byId).flat().forEach(m=>m.material.emissiveIntensity=0);S.pulse=on?STEPS[S.step].id:null;if(!on)return}
+function start(level){S={step:0,hintLv:0,mistakes:0,hints:0,level,t0:performance.now(),greeted:false,thanked:false,done:false,log:[],pulse:null};
+ build(level);$("#lv").textContent=level;$("#chat").innerHTML="";$("#sum").hidden=true;last="";rig.position.set(0,0,4.5);look.set(-1.5,.5,3);go();steps();
+ say("Coach","Goal: buy a carton of milk. Take your time. Ask for a hint whenever you want one.");log("start level "+level)}
+function next(){S.step++;S.hintLv=0;glow(false);if(S.step>=STEPS.length){finish();return}go();steps();drawPanel();$("#banner").textContent="Goal: "+STEPS[S.step].t}
+function act(id){if(S.done)return;const cur=STEPS[S.step].id;
+ if(id=="cashier"){say("Cashier","Hello! Can I help you?");return}
+ if(id==cur&&cur!="pay"){log("done "+cur);if(cur=="basket"||cur=="milk")byId[cur].forEach(m=>m.visible=false);say("Coach","Good. "+STEPS[S.step].t+" is done.");next()}
+ else{S.mistakes++;log("mistake: clicked "+id);say("Coach","Not this one, and that is okay. Your goal: "+STEPS[S.step].t.toLowerCase()+".")}}
+function doPay(){if(STEPS[S.step].id!="pay"){say("Cashier","Please bring your items to the counter first.");return}
+ log("paid");byId.receipt.forEach(m=>m.visible=true);say("Cashier","That is ₹30. Thank you! Your receipt is on the counter.");next()}
+function hint(){if(S.done)return;S.hints++;const h=STEPS[S.step].h;say("Coach","Hint "+(S.hintLv+1)+": "+h[Math.min(S.hintLv,2)]);if(S.hintLv>=2&&!calm)S.pulse=STEPS[S.step].id;S.hintLv++;log("hint")}
+function reply(t){const m=t.toLowerCase(),c=STEPS[S.step].id;
+ if(/\b(hi|hello|hey|good (morning|afternoon|evening))\b/.test(m)){S.greeted=true;return"Hello! Welcome to FreshMart. How can I help you today?"}
+ if(/thank/.test(m)){S.thanked=true;return"You are welcome! Have a nice day."}
+ if(/help|stuck|don.?t know/.test(m)){hint();return null}
+ if(/pay|bill|how much|price|cost/.test(m)){if(["pay","receipt","exit"].includes(c)||S.step>=3){if(c=="pay"){doPay();return null}return"You have already paid. Thank you!"}return"The milk is ₹30. Please bring it to the counter first."}
+ if(/milk|where|find/.test(m))return"Milk is on the shelves on the right. Look for a white carton with a blue top.";
+ if(/bye|goodbye/.test(m))return"Goodbye! See you again.";
+ return"Sorry, I did not understand. You can say hello, ask where the milk is, or ask to pay."}
+function send(t){t=t.trim();if(!t||S.done)return;say("You",t);log("chat: "+t);const r=reply(t);if(r)say("Cashier",r)}
+function finish(){S.done=true;glow(false);steps();const sec=Math.round((performance.now()-S.t0)/1000),score=Math.max(0,100-S.mistakes*10-S.hints*5),up=score>=90;
+ last=up?"Well done! You finished with a high score.":"Well done! You finished the trip.";drawPanel();$("#banner").textContent=last;
+ const s=$("#sum");s.hidden=false;s.innerHTML="";const h=document.createElement("b");h.textContent="Trip complete: "+score+"/100";
+ const p=document.createElement("p");p.textContent="Time "+sec+"s, mistakes "+S.mistakes+", hints "+S.hints+". Greeted the cashier: "+(S.greeted?"yes":"not yet")+". Said thank you: "+(S.thanked?"yes":"not yet")+". Next step: "+(up?"move up to Level 2 (look-alike cartons).":"repeat this level; fewer hints next time raises the score.");
+ const b=document.createElement("button");b.className="p";b.textContent=up?"Start Level 2":"Try again";b.onclick=()=>start(up?2:S.level);
+ const pre=document.createElement("pre");pre.textContent=JSON.stringify({level:S.level,score,sec,mistakes:S.mistakes,hints:S.hints,greeted:S.greeted,thanked:S.thanked,events:S.log},null,1);s.append(h,p,b,pre)}
+["Hello","Where is the milk?","I want to pay","Thank you","I need help"].forEach(t=>{const b=document.createElement("button");b.textContent=t;b.onclick=()=>send(t);$("#chips").append(b)});
+$("#send").onclick=()=>{send($("#msg").value);$("#msg").value=""};$("#msg").onkeydown=e=>{if(e.key=="Enter")$("#send").click()};
+$("#hint").onclick=hint;$("#pay").onclick=doPay;
+$("#calm").onclick=e=>{calm=!calm;e.target.textContent="Calm mode: "+(calm?"on":"off");scene.background=new THREE.Color(calm?0xdde2e6:0xcfe3ec);if(calm)glow(false)};
+$("#voice").onclick=e=>{voice=!voice;e.target.textContent="Voice: "+(voice?"on":"off")};
+const rc=new THREE.Raycaster();
+function hit(){const h=rc.intersectObjects(pick.filter(m=>m.visible))[0];if(h)act(h.object.userData.id)}
+$("#c").addEventListener("click",e=>{const r=e.target.getBoundingClientRect();rc.setFromCamera(new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1),camera);hit()});
+for(let i=0;i<2;i++){const c=renderer.xr.getController(i);c.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-3)]),new THREE.LineBasicMaterial({color:0x4cc3cf})));
+ c.addEventListener("select",()=>{const m=new THREE.Matrix4().extractRotation(c.matrixWorld);rc.ray.origin.setFromMatrixPosition(c.matrixWorld);rc.ray.direction.set(0,0,-1).applyMatrix4(m);hit()});rig.add(c)}
+if(navigator.xr)navigator.xr.isSessionSupported("immersive-vr").then(ok=>{if(ok)$("#vr").hidden=false}).catch(()=>{});
+$("#vr").onclick=async()=>{try{renderer.xr.setReferenceSpaceType("local-floor");const s=await navigator.xr.requestSession("immersive-vr",{optionalFeatures:["local-floor"]});await renderer.xr.setSession(s)}catch(e){say("Coach","Could not start VR on this device. You can keep practising on screen.")}};
+function rs(){const s=$("#stage");renderer.setSize(s.clientWidth,s.clientHeight,false);camera.aspect=s.clientWidth/s.clientHeight;camera.updateProjectionMatrix()}
+addEventListener("resize",rs);rs();
+start(1);
+renderer.setAnimationLoop(t=>{const xr=renderer.xr.isPresenting;rig.position.lerp(goal,.05);panel.visible=xr;
+ if(!xr){look.lerp(tg,.05);camera.lookAt(look)}
+ Object.entries(byId).forEach(([id,ms])=>ms.forEach(m=>{m.material.emissive.setHex(0x2f9fff);m.material.emissiveIntensity=(S.pulse==id&&!calm)?.35+.3*Math.sin(t/250):0}));
+ renderer.render(scene,camera)});
+</script></body></html>
